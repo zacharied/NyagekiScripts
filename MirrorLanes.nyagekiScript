@@ -1,13 +1,14 @@
 /*
  * MirrorLanes
- * 
+ *
  * DESCRIPTION
  * Mirrors all side-dependent lane objects (that is, LaneLeft, LaneRight, WallLeft, and WallRight)
- * 
+ *
  * SELECTION
  * Any
  */
 
+using System.Collections.Generic;
 using OngekiFumenEditor.Base.OngekiObjects;
 using OngekiFumenEditor.Utils;
 using OngekiFumenEditor.Modules.EditorScriptExecutor.Scripts;
@@ -15,6 +16,7 @@ using System.Linq;
 using OngekiFumenEditor.Base.OngekiObjects.Lane;
 using OngekiFumenEditor.Base.OngekiObjects.Lane.Base;
 using OngekiFumenEditor.Base.OngekiObjects.Wall;
+using OngekiFumenEditor.Modules.FumenVisualEditor.Base;
 
 var targetEditor = ScriptArgs.TargetEditor;
 if (targetEditor is null)
@@ -27,35 +29,57 @@ var fumen = targetEditor.Fumen;
 var setting = targetEditor.Setting;
 var nyagekiProj = targetEditor.EditorProjectData;
 
-foreach (var lane in fumen.Lanes.Where(l => l.IsSelected).ToList()) {
-    LaneStartBase newLane = lane.LaneType switch
-    {
-        LaneType.WallLeft => new WallRightStart(),
-        LaneType.WallRight => new WallLeftStart(),
-        LaneType.Left => new LaneRightStart(),
-        LaneType.Right => new LaneLeftStart(),
-        _ => null
-    };
-    if (newLane is null) continue;
-    
-    newLane.TGrid = lane.TGrid;
-    newLane.XGrid = lane.XGrid;
-    
-    foreach (var point in lane.Children) {
-        LaneNextBase newObject = point switch
+var targetObjects = fumen.Lanes.Where(l => l.IsSelected).ToList();
+var resultantObjects = new List<LaneStartBase>();
+
+targetEditor.UndoRedoManager.ExecuteAction(new LambdaUndoAction("Mirror Lanes", Apply, Undo));
+return;
+
+void Apply()
+{
+    DoMirror(targetObjects);
+}
+
+void Undo()
+{
+    DoMirror(resultantObjects); 
+    resultantObjects.Clear();
+}
+
+void DoMirror(IEnumerable<LaneStartBase> lanes)
+{
+    foreach (var lane in lanes.ToList()) {
+        LaneStartBase newLane = lane.LaneType switch
         {
-            WallLeftNext => new WallRightNext(),
-            WallRightNext => new WallLeftNext(),
-            LaneLeftNext => new LaneRightNext(),
-            LaneRightNext => new LaneLeftNext(),
-            _ => throw new()
+            LaneType.WallLeft => new WallRightStart(),
+            LaneType.WallRight => new WallLeftStart(),
+            LaneType.Left => new LaneRightStart(),
+            LaneType.Right => new LaneLeftStart(),
+            _ => null
         };
-        newObject.XGrid = point.XGrid;
-        newObject.TGrid = point.TGrid;
-        
-        newLane.AddChildObject(newObject);
+        if (newLane is null) continue;
+
+        newLane.TGrid = lane.TGrid;
+        newLane.XGrid = lane.XGrid;
+
+        foreach (var point in lane.Children) {
+            LaneNextBase newObject = point switch
+            {
+                WallLeftNext => new WallRightNext(),
+                WallRightNext => new WallLeftNext(),
+                LaneLeftNext => new LaneRightNext(),
+                LaneRightNext => new LaneLeftNext(),
+                _ => throw new()
+            };
+            newObject.XGrid = point.XGrid;
+            newObject.TGrid = point.TGrid;
+
+            newLane.AddChildObject(newObject);
+        }
+
+        fumen.AddObject(newLane);
+        fumen.RemoveObject(lane);
+
+        resultantObjects.Add(newLane);
     }
-    
-    fumen.AddObject(newLane);
-    fumen.RemoveObject(lane);
 }

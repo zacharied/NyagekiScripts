@@ -130,6 +130,8 @@ void Undo()
     foreach (var child in newObjects) {
         laneRange[0].ReferenceStartObject.RemoveChildObject(child);
     }
+
+    newObjects.Clear();
 }
 
 ConnectableChildObjectBase GetNext()
@@ -169,17 +171,18 @@ internal sealed class MyDialog : Window
 
         var root = new StackPanel() { Orientation = Orientation.Vertical };
         
-        var easingBox = new StackPanel { Orientation = Orientation.Horizontal };
-        var easingLabel = new Label() { Content = "TGrid Easing" };
-
-        var easingComboBox = new ComboBox();
-        easingComboBox.ItemsSource = AllEasingTypes;
-        easingComboBox.SelectedIndex = 0;
-        
+        var easingComboBox = new ComboBox
+        {
+            ItemsSource = AllEasingTypes,
+            SelectedIndex = 0
+        };
         easingComboBox.SelectionChanged += (sender, args) => Results.EasingTypes = (EasingTypes)args.AddedItems[0]!;
-
-        easingBox.Children.Add(easingLabel);
-        easingBox.Children.Add(easingComboBox);
+        
+        var invertCheckBox = new CheckBox() { IsChecked = false };
+        invertCheckBox.Click += (sender, args) =>
+        {
+            Results.Invert = invertCheckBox.IsChecked.Value;
+        };
 
         var okBox = new Button() { Content = "OK" };
         okBox.Click += (sender, args) =>
@@ -187,8 +190,21 @@ internal sealed class MyDialog : Window
             Results.Success = true;    
             Close();
         };
+        
+        var easingPanel = new StackPanel { Orientation = Orientation.Horizontal, Children =
+        {
+            new Label { Content = "TGrid easing" },
+            easingComboBox    
+        }};
 
-        root.Children.Add(easingBox);
+        var invertPanel = new StackPanel() { Orientation = Orientation.Horizontal, Children =
+        {
+            new Label() { Content = "Reverse starting direction" },
+            invertCheckBox
+        }};
+
+        root.Children.Add(easingPanel);
+        root.Children.Add(invertPanel);
         root.Children.Add(okBox);
         
         AddChild(root);
@@ -198,6 +214,7 @@ internal sealed class MyDialog : Window
 public struct DialogResults
 {
     public bool Success = false;
+    public bool Invert = false;
     public EasingTypes EasingTypes = EasingTypes.None;
 
     public DialogResults()

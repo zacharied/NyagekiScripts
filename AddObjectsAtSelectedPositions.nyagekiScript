@@ -31,14 +31,35 @@ var setting = targetEditor.Setting;
 var nyagekiProj = targetEditor.EditorProjectData;
 
 var clipboard = IoC.Get<IFumenEditorClipboard>();
+var clipboardContents = clipboard.CurrentCopiedObjects;
+if (clipboardContents.Count != 1) {
+    MessageBox.Show("There are too many objects in the clipboard (max 1)");
+    return;
+}
 
-foreach (var selectedObj in fumen.GetAllDisplayableObjects()
-             .OfType<OngekiMovableObjectBase>()
-             .Where(o => o.IsSelected)
-             .ToList()) {
-    var instance = (OngekiMovableObjectBase)clipboard.CurrentCopiedObjects.First().CopyNew();
-    instance.XGrid = selectedObj.XGrid;
-    instance.TGrid = selectedObj.TGrid;
-    
-    fumen.AddObject(instance);
+var insertion = clipboardContents.Single();
+var insertedObjects = new List<OngekiObjectBase>();
+
+targetEditor.UndoRedoManager.ExecuteAction(new LambdaUndoAction("Add Objects at Selected", Apply, Undo));
+return;
+
+void Apply()
+{
+    foreach (var selectedObj in fumen.GetAllDisplayableObjects()
+                 .OfType<OngekiMovableObjectBase>()
+                 .Where(o => o.IsSelected)
+                 .ToList()) {
+        var instance = (OngekiMovableObjectBase)insertion.CopyNew();
+        instance.XGrid = selectedObj.XGrid;
+        instance.TGrid = selectedObj.TGrid;
+
+        fumen.AddObject(instance);
+        insertedObjects.Add(instance);
+    }
+}
+
+void Undo()
+{
+    fumen.RemoveObjects(insertedObjects);
+    insertedObjects.Clear();
 }
