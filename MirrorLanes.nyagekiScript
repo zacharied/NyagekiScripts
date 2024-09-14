@@ -2,10 +2,11 @@
  * MirrorLanes
  *
  * DESCRIPTION
- * Mirrors all side-dependent lane objects (that is, LaneLeft, LaneRight, WallLeft, and WallRight)
+ * Mirrors all side-dependent lane objects (that is, LaneLeft, LaneRight, WallLeft, and WallRight) along with the
+ * taps and holds docked to them.
  *
  * SELECTION
- * Any
+ * Any lane start objects
  */
 
 using System.Collections.Generic;
@@ -13,6 +14,8 @@ using OngekiFumenEditor.Base.OngekiObjects;
 using OngekiFumenEditor.Utils;
 using OngekiFumenEditor.Modules.EditorScriptExecutor.Scripts;
 using System.Linq;
+using OngekiFumenEditor.Base;
+using OngekiFumenEditor.Base.OngekiObjects.ConnectableObject;
 using OngekiFumenEditor.Base.OngekiObjects.Lane;
 using OngekiFumenEditor.Base.OngekiObjects.Lane.Base;
 using OngekiFumenEditor.Base.OngekiObjects.Wall;
@@ -29,21 +32,21 @@ var fumen = targetEditor.Fumen;
 var setting = targetEditor.Setting;
 var nyagekiProj = targetEditor.EditorProjectData;
 
-var targetObjects = fumen.Lanes.Where(l => l.IsSelected).ToList();
-var resultantObjects = new List<LaneStartBase>();
+var targetLanes = fumen.Lanes.Where(l => l.IsSelected).ToList();
+var resultantLanes = new List<LaneStartBase>();
 
 targetEditor.UndoRedoManager.ExecuteAction(new LambdaUndoAction("Mirror Lanes", Apply, Undo));
 return;
 
 void Apply()
 {
-    DoMirror(targetObjects);
+    DoMirror(targetLanes);
 }
 
 void Undo()
 {
-    DoMirror(resultantObjects); 
-    resultantObjects.Clear();
+    DoMirror(resultantLanes); 
+    resultantLanes.Clear();
 }
 
 void DoMirror(IEnumerable<LaneStartBase> lanes)
@@ -80,6 +83,13 @@ void DoMirror(IEnumerable<LaneStartBase> lanes)
         fumen.AddObject(newLane);
         fumen.RemoveObject(lane);
 
-        resultantObjects.Add(newLane);
+        // Update taps and holds attached to this lane
+        var start = lane.ReferenceStartObject.TGrid;
+        var end = lane.Children.Last().TGrid;
+        fumen.Taps.Concat<ILaneDockableChangable>(fumen.Holds)
+            .Where(t => t.TGrid >= start && t.TGrid <= end && t.ReferenceLaneStart == lane.ReferenceStartObject)
+            .ForEach(t => t.ReferenceLaneStart = (LaneStartBase)newLane.ReferenceStartObject);
+
+        resultantLanes.Add(newLane);
     }
 }
