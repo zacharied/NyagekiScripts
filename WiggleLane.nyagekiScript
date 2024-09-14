@@ -1,0 +1,208 @@
+/*
+ * WiggleLane
+ *
+ * DESCRIPTION
+ * Inserts path nodes to create a "wiggle" effect in a lane range
+ *
+ * SELECTION
+ * Two adjacent lane nodes of the same lane
+ */
+
+using System;
+using Caliburn.Micro;
+using OngekiFumenEditor.Base;
+using OngekiFumenEditor.Modules.FumenVisualEditor.Base;
+using OngekiFumenEditor.Modules.FumenVisualEditor.Kernel;
+using OngekiFumenEditor.Utils;
+using OngekiFumenEditor.Modules.EditorScriptExecutor.Scripts;
+using System.Linq;
+using System.Collections.Generic;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using OngekiFumenEditor.Base.EditorObjects;
+using OngekiFumenEditor.Base.OngekiObjects.Beam;
+using OngekiFumenEditor.Base.OngekiObjects.ConnectableObject;
+using OngekiFumenEditor.Base.OngekiObjects.Lane;
+using OngekiFumenEditor.Base.OngekiObjects.Lane.Base;
+using OngekiFumenEditor.Base.OngekiObjects.Wall;
+using Window = System.Windows.Window;
+using WindowStartupLocation = System.Windows.WindowStartupLocation;
+
+var targetEditor = ScriptArgs.TargetEditor;
+if (targetEditor is null)
+{
+    Log.LogInfo("No target editor selected. Exiting.");
+    return;
+}
+
+var fumen = targetEditor.Fumen;
+var setting = targetEditor.Setting;
+var nyagekiProj = targetEditor.EditorProjectData;
+
+var editorManager = IoC.Get<IEditorDocumentManager>();
+
+var laneRange = fumen.Lanes.SelectMany<LaneStartBase, ConnectableObjectBase>(l => l.Children)
+    .Concat(fumen.Lanes.Select(l => l.ReferenceStartObject))
+    .Where(l => l.IsSelected)   
+    .ToList();
+
+if (laneRange.Count() != 2) {
+    Log.LogError($"Invalid lane selection ({laneRange.Count})");
+    return;
+}
+
+var (startPoint, endPoint) = (laneRange[0], laneRange[1]);
+if (startPoint.TGrid > endPoint.TGrid) {
+    (endPoint, startPoint) = (startPoint, endPoint);
+}
+
+if (startPoint.LaneType != endPoint.LaneType) {
+    Log.LogError("Selection must be of same type lanes");
+    return;
+}
+
+if (startPoint.NextObject != endPoint) {
+    Log.LogError("Selected nodes must be adjacent");
+    return;
+}
+
+var newObjects = new List<ConnectableChildObjectBase>();
+
+var options = Dialog();
+if (!options.Success) {
+    return;
+}
+
+targetEditor.UndoRedoManager.ExecuteAction(new LambdaUndoAction("Wiggle lane", Apply, Undo));
+
+return;
+
+#region Functions
+
+TGrid EaseTGrid(EasingTypes easingType, TGrid start, TGrid end, TGrid curr)
+{
+    var easedValue = Interpolation.ApplyEasing(easingType, start.TotalUnit, end.TotalUnit, curr.TotalUnit);
+    var diff = end - new GridOffset(start.Unit, start.Grid);
+    var easedTGrid = start + new GridOffset((float)(diff.TotalUnit * easedValue), 0);
+    return easedTGrid;
+}
+
+DialogResults Dialog()
+{
+    var dialog = new MyDialog();
+    dialog.ShowDialog();
+    return dialog.Results;
+}
+
+void Apply()
+{
+    Log.LogInfo("Applying...");
+    var wiggleRange = (uint)setting.XGridUnitSpace;
+    var offset = new GridOffset(0, (int)(laneRange[0].TGrid.ResT / setting.BeatSplit / 4));
+
+    var entries = new Dictionary<TGrid, XGrid>();
+    var start = startPoint.TGrid + offset;
+    var end = endPoint.TGrid;
+    
+    Log.LogInfo($"Starting: {start} -> {end} ({offset})");
+    var wiggleReverse = false;
+    for (var t = start; t < end; t += offset) {
+        var easedT = EaseTGrid(options.EasingTypes, start, end, t);
+        if (easedT >= end || easedT < start)
+            continue;
+        var x = startPoint.ReferenceStartObject.CalulateXGrid(easedT) + new GridOffset((float)wiggleRange * (wiggleReverse ? -1 : 1), 0);
+        entries[easedT] = x;
+        wiggleReverse = !wiggleReverse;
+    }
+    
+    foreach (var (t, x) in entries) {
+        var newChild = GetNext();
+        newChild.TGrid = t;
+        newChild.XGrid = x;
+        startPoint.ReferenceStartObject.InsertChildObject(t, newChild);
+        newObjects.Add(newChild);
+    }
+}
+
+void Undo()
+{
+    foreach (var child in newObjects) {
+        laneRange[0].ReferenceStartObject.RemoveChildObject(child);
+    }
+}
+
+ConnectableChildObjectBase GetNext()
+{
+    return startPoint.ReferenceStartObject switch
+    {
+        LaneLeftStart => new LaneLeftNext(),
+        LaneCenterStart => new LaneCenterNext(),
+        LaneRightStart => new LaneRightNext(),
+        WallLeftStart => new WallLeftNext(),
+        WallRightStart => new WallRightNext(),
+        ColorfulLaneStart => new ColorfulLaneNext(),
+        EnemyLaneStart => new EnemyLaneNext(),
+        BeamStart => new BeamNext(),
+        AutoplayFaderLaneStart => new AutoplayFaderLaneNext(),
+        _ => throw new ArgumentOutOfRangeException()
+    };
+}
+
+#endregion
+
+#region  Forms
+
+internal sealed class MyDialog : Window
+{
+    public DialogResults Results = new();
+
+    private IEnumerable<EasingTypes> AllEasingTypes => Enum.GetValues<EasingTypes>();
+
+    public MyDialog()
+    {
+        SizeToContent = SizeToContent.WidthAndHeight;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        Background = new SolidColorBrush(Colors.DarkGray);
+        ResizeMode = ResizeMode.NoResize;
+        Title = "Wiggle";
+
+        var root = new StackPanel() { Orientation = Orientation.Vertical };
+        
+        var easingBox = new StackPanel { Orientation = Orientation.Horizontal };
+        var easingLabel = new Label() { Content = "TGrid Easing" };
+
+        var easingComboBox = new ComboBox();
+        easingComboBox.ItemsSource = AllEasingTypes;
+        easingComboBox.SelectedIndex = 0;
+        
+        easingComboBox.SelectionChanged += (sender, args) => Results.EasingTypes = (EasingTypes)args.AddedItems[0]!;
+
+        easingBox.Children.Add(easingLabel);
+        easingBox.Children.Add(easingComboBox);
+
+        var okBox = new Button() { Content = "OK" };
+        okBox.Click += (sender, args) =>
+        {
+            Results.Success = true;    
+            Close();
+        };
+
+        root.Children.Add(easingBox);
+        root.Children.Add(okBox);
+        
+        AddChild(root);
+    }
+}
+
+public struct DialogResults
+{
+    public bool Success = false;
+    public EasingTypes EasingTypes = EasingTypes.None;
+
+    public DialogResults()
+    {
+    }
+}
+
+#endregion

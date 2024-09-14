@@ -1,0 +1,35 @@
+﻿/*
+ * Script Name
+ * 
+ * DESCRIPTION
+ * Description
+ * 
+ * SELECTION
+ * Selection
+ */
+
+using Caliburn.Micro;
+using OngekiFumenEditor.Base;
+using OngekiFumenEditor.Base.OngekiObjects;
+using OngekiFumenEditor.Modules.FumenVisualEditor.Base;
+using OngekiFumenEditor.Modules.FumenVisualEditor.Kernel;
+using OngekiFumenEditor.Utils;
+using OngekiFumenEditor.Modules.EditorScriptExecutor.Scripts;
+using System.Linq;
+using System.Collections.Generic;
+
+var targetEditor = ScriptArgs.TargetEditor;
+if (targetEditor is null)
+{
+    Log.LogInfo("No target editor selected. Exiting.");
+    return;
+}
+
+var fumen = targetEditor.Fumen;
+var setting = targetEditor.Setting;
+var nyagekiProj = targetEditor.EditorProjectData;
+
+var selectedObjects = fumen.GetAllDisplayableObjects()
+             .OfType<OngekiMovableObjectBase>()
+             .Where(o => o.IsSelected)
+             .ToList();

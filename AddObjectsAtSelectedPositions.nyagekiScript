@@ -1,0 +1,44 @@
+/*
+ * AddObjectsAtSelectedPositions
+ *
+ * DESCRIPTION
+ * Inserts a copy of the clipboard contents at the position of each selected object
+ *
+ * SELECTION
+ * Any
+ */
+
+using Caliburn.Micro;
+using OngekiFumenEditor.Base;
+using OngekiFumenEditor.Base.OngekiObjects;
+using OngekiFumenEditor.Modules.FumenVisualEditor.Base;
+using OngekiFumenEditor.Modules.FumenVisualEditor.Kernel;
+using OngekiFumenEditor.Utils;
+using OngekiFumenEditor.Modules.EditorScriptExecutor.Scripts;
+using System.Linq;
+using System.Collections.Generic;
+using System.Windows;
+
+var targetEditor = ScriptArgs.TargetEditor;
+if (targetEditor is null)
+{
+    Log.LogInfo("No target editor selected. Exiting.");
+    return;
+}
+
+var fumen = targetEditor.Fumen;
+var setting = targetEditor.Setting;
+var nyagekiProj = targetEditor.EditorProjectData;
+
+var clipboard = IoC.Get<IFumenEditorClipboard>();
+
+foreach (var selectedObj in fumen.GetAllDisplayableObjects()
+             .OfType<OngekiMovableObjectBase>()
+             .Where(o => o.IsSelected)
+             .ToList()) {
+    var instance = (OngekiMovableObjectBase)clipboard.CurrentCopiedObjects.First().CopyNew();
+    instance.XGrid = selectedObj.XGrid;
+    instance.TGrid = selectedObj.TGrid;
+    
+    fumen.AddObject(instance);
+}
