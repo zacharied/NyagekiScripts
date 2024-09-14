@@ -1,0 +1,57 @@
+/*
+ * MirrorObjectPositions
+ *
+ * DESCRIPTION
+ * Inverts the XGrid position of all objects
+ *
+ * SELECTION
+ * Any
+ */
+
+using System.Collections.Generic;
+using OngekiFumenEditor.Base.OngekiObjects;
+using OngekiFumenEditor.Utils;
+using OngekiFumenEditor.Modules.EditorScriptExecutor.Scripts;
+using System.Linq;
+using OngekiFumenEditor.Base;
+using OngekiFumenEditor.Modules.FumenVisualEditor.Base;
+
+var targetEditor = ScriptArgs.TargetEditor;
+if (targetEditor is null)
+{
+    Log.LogInfo("No target editor selected. Exiting.");
+    return;
+}
+
+var fumen = targetEditor.Fumen;
+var setting = targetEditor.Setting;
+var nyagekiProj = targetEditor.EditorProjectData;
+
+var targetObjects = fumen.GetAllDisplayableObjects().OfType<OngekiMovableObjectBase>()
+    .Where(o => o is not Tap && o is not Hold)
+    .Where(o => o.IsSelected)
+    .ToList();
+
+var affectedObjects = new List<OngekiMovableObjectBase>();
+
+targetEditor.UndoRedoManager.ExecuteAction(new LambdaUndoAction("Mirror objects", Apply, Undo));
+return;
+
+void Apply()
+{
+    DoMirror(targetObjects);
+}
+
+void Undo()
+{
+    DoMirror(affectedObjects);
+    affectedObjects.Clear();
+}
+
+void DoMirror(IEnumerable<OngekiMovableObjectBase> objects)
+{
+    foreach (var obj in objects) {
+        obj.XGrid = new XGrid(-obj.XGrid.Unit, -obj.XGrid.Grid);
+        affectedObjects.Add(obj);
+    }
+}
