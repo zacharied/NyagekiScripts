@@ -106,7 +106,7 @@ void Apply()
     var end = endPoint.TGrid;
     
     Log.LogInfo($"Starting: {start} -> {end} ({offset})");
-    var wiggleReverse = false;
+    var wiggleReverse = options.Invert;
     for (var t = start; t < end; t += offset) {
         var easedT = EaseTGrid(options.EasingTypes, start, end, t);
         if (easedT >= end || easedT < start)
