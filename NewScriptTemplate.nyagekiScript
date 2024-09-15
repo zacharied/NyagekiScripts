@@ -33,3 +33,14 @@ var selectedObjects = fumen.GetAllDisplayableObjects()
              .OfType<OngekiMovableObjectBase>()
              .Where(o => o.IsSelected)
              .ToList();
+
+targetEditor.UndoRedoManager.ExecuteAction(new LambdaUndoAction("Action", Apply, Undo));
+return;
+
+void Apply() {
+
+}
+
+void Undo() {
+
+}
