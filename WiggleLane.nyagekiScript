@@ -17,9 +17,11 @@ using OngekiFumenEditor.Utils;
 using OngekiFumenEditor.Modules.EditorScriptExecutor.Scripts;
 using System.Linq;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using MahApps.Metro.Controls;
 using OngekiFumenEditor.Base.EditorObjects;
 using OngekiFumenEditor.Base.OngekiObjects.Beam;
 using OngekiFumenEditor.Base.OngekiObjects.ConnectableObject;
@@ -90,7 +92,7 @@ TGrid EaseTGrid(EasingTypes easingType, TGrid start, TGrid end, TGrid curr)
 
 DialogResults Dialog()
 {
-    var dialog = new MyDialog();
+    var dialog = new MyDialog((int)setting.XGridUnitSpace);
     dialog.ShowDialog();
     return dialog.Results;
 }
@@ -98,21 +100,30 @@ DialogResults Dialog()
 void Apply()
 {
     Log.LogInfo("Applying...");
-    var wiggleRange = (uint)setting.XGridUnitSpace;
+    var wiggleRange = options.XGridMultiplier;
     var offset = new GridOffset(0, (int)(laneRange[0].TGrid.ResT / setting.BeatSplit / 4));
 
     var entries = new Dictionary<TGrid, XGrid>();
-    var start = startPoint.TGrid + offset;
     var end = endPoint.TGrid;
     
-    Log.LogInfo($"Starting: {start} -> {end} ({offset})");
+    Log.LogInfo($"Starting: {startPoint.TGrid} -> {end} ({offset})");
     var wiggleReverse = options.Invert;
-    for (var t = start; t < end; t += offset) {
-        var easedT = EaseTGrid(options.EasingTypes, start, end, t);
-        if (easedT >= end || easedT < start)
+    for (var t = startPoint.TGrid + offset; t < end; t += offset) {
+        var easedT = EaseTGrid(options.TGridEasing, startPoint.TGrid, end, t);
+        Log.LogInfo($"{easedT}");
+        if (easedT >= end || easedT < startPoint.TGrid)
             continue;
-        var x = startPoint.ReferenceStartObject.CalulateXGrid(easedT) + new GridOffset((float)wiggleRange * (wiggleReverse ? -1 : 1), 0);
-        entries[easedT] = x;
+
+        var baseX = startPoint.ReferenceStartObject.CalulateXGrid(easedT).TotalUnit;
+        var multiplier = Interpolation.ApplyEasing(options.XGridEasing,
+            (easedT.TotalUnit - startPoint.TGrid.TotalUnit) / (end.TotalUnit - startPoint.TGrid.TotalUnit));
+        var x = baseX + options.XGridMultiplier * multiplier * (wiggleReverse ? -1 : 1);
+        var xDistance = x - baseX;
+        if (!options.CenterStartPoint) {
+            x += Math.Abs(xDistance) * (options.Invert ? - 1 : 1);
+        }
+        entries[easedT] = XGrid.FromTotalUnit((float)x);
+
         wiggleReverse = !wiggleReverse;
     }
     
@@ -159,9 +170,14 @@ internal sealed class MyDialog : Window
 {
     public DialogResults Results = new();
 
-    private IEnumerable<EasingTypes> AllEasingTypes => Enum.GetValues<EasingTypes>();
+//    private readonly ImmutableList<EasingTypes> TGridEasingTypes = new[] {
+//        EasingTypes.None, EasingTypes.In, EasingTypes.Out, EasingTypes.OutBack, EasingTypes.InBack
+//    }.ToImmutableList();
+    private ImmutableList<EasingTypes> TGridEasingTypes => XGridEasingTypes;
 
-    public MyDialog()
+    private readonly ImmutableList<EasingTypes> XGridEasingTypes = Enum.GetValues<EasingTypes>().ToImmutableList();
+
+    public MyDialog(int xGridSpacing)
     {
         SizeToContent = SizeToContent.WidthAndHeight;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -170,43 +186,93 @@ internal sealed class MyDialog : Window
         Title = "Wiggle";
 
         var root = new StackPanel() { Orientation = Orientation.Vertical };
-        
+
         var easingComboBox = new ComboBox
         {
-            ItemsSource = AllEasingTypes,
+            ItemsSource = TGridEasingTypes,
             SelectedIndex = 0
         };
-        easingComboBox.SelectionChanged += (sender, args) => Results.EasingTypes = (EasingTypes)args.AddedItems[0]!;
-        
+        easingComboBox.SelectionChanged += (sender, args) => Results.TGridEasing = (EasingTypes)args.AddedItems[0]!;
+
         var invertCheckBox = new CheckBox() { IsChecked = false };
         invertCheckBox.Click += (sender, args) =>
         {
             Results.Invert = invertCheckBox.IsChecked.Value;
         };
+        
+        var xEasingComboBox = new ComboBox()
+        {
+            ItemsSource = XGridEasingTypes,
+            SelectedIndex = 0
+        };
+        xEasingComboBox.SelectionChanged += (sender, args) => Results.XGridEasing = (EasingTypes)args.AddedItems[0]!;
 
+        var xSpacingEntry = new NumericUpDown() { Value = xGridSpacing };
+        xSpacingEntry.ValueChanged += (sender, args) =>
+        {
+            Results.XGridMultiplier = (int)xSpacingEntry.Value;
+        };
+        Results.XGridMultiplier = xGridSpacing;
+
+        var centerBox = new CheckBox() { IsChecked = false };
+        centerBox.Click += (sender, args) =>
+        {
+            Results.CenterStartPoint = centerBox.IsChecked!.Value;
+        };
+        
         var okBox = new Button() { Content = "OK" };
         okBox.Click += (sender, args) =>
         {
-            Results.Success = true;    
+            Results.Success = true;
             Close();
         };
-        
-        var easingPanel = new StackPanel { Orientation = Orientation.Horizontal, Children =
-        {
-            new Label { Content = "TGrid easing" },
-            easingComboBox    
-        }};
 
-        var invertPanel = new StackPanel() { Orientation = Orientation.Horizontal, Children =
+        var easingPanel = new StackPanel
         {
-            new Label() { Content = "Reverse starting direction" },
-            invertCheckBox
-        }};
+            Orientation = Orientation.Horizontal, Children =
+            {
+                new Label { Content = "TGrid easing" },
+                easingComboBox
+            }
+        };
+
+        var invertPanel = new StackPanel()
+        {
+            Orientation = Orientation.Horizontal, Children =
+            {
+                new Label() { Content = "Reverse starting direction" },
+                invertCheckBox
+            }
+        };
+
+        var xGridPanel = new StackPanel()
+        {
+            Orientation = Orientation.Horizontal,
+            Children =
+            {
+                new Label() { Content = "XGrid easing" },
+                xEasingComboBox,
+                new Label() { Width = xGridSpacing },
+                xSpacingEntry
+            }
+        };
+
+        var centerBoxPanel = new StackPanel()
+        {
+            Orientation = Orientation.Horizontal,
+            Children =
+            {
+                new Label() { Content = "Center start point" },
+                centerBox
+            }
+        };
 
         root.Children.Add(easingPanel);
         root.Children.Add(invertPanel);
+        root.Children.Add(xGridPanel);
+        root.Children.Add(centerBoxPanel);
         root.Children.Add(okBox);
-        
+
         AddChild(root);
     }
 }
@@ -215,7 +281,10 @@ public struct DialogResults
 {
     public bool Success = false;
     public bool Invert = false;
-    public EasingTypes EasingTypes = EasingTypes.None;
+    public EasingTypes TGridEasing = EasingTypes.None;
+    public EasingTypes XGridEasing = EasingTypes.None;
+    public int XGridMultiplier = 0;
+    public bool CenterStartPoint = false;
 
     public DialogResults()
     {
